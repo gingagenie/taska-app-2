@@ -1,41 +1,82 @@
 import Stripe from 'stripe';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { supabaseAdmin } from '@/lib/supabaseServer';
 
-export async function POST(req: NextRequest) {
-  const sig = req.headers.get('stripe-signature') as string;
-  const body = await req.text();
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
-  let event: Stripe.Event;
+// Keep this on Node runtime (Stripe's SDK needs it)
+export const runtime = 'nodejs';
+// Avoid caching this route
+export const dynamic = 'force-dynamic';
 
+export async function POST(req: Request) {
+  const body = await req.text();
+  const sig = headers().get('stripe-signature') ?? '';
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+
+  let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
   } catch (err: any) {
     return new NextResponse(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
-  try {
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const orgId = session.metadata?.org_id;
-      if (orgId) {
-        await supabaseAdmin.from('orgs').update({ subscription_status: 'active' }).eq('id', orgId);
-      }
+  const upsertSubRow = async (orgId: string, sub?: Stripe.Subscription, status?: string) => {
+    const stripe_customer_id = (sub?.customer as string) ?? undefined;
+    const stripe_subscription_id = sub?.id;
+    const finalStatus = status || sub?.status || 'trialing';
+
+    const { data: existing } = await supabaseAdmin
+      .from('subscriptions')
+      .select('id')
+      .eq('org_id', orgId)
+      .maybeSingle();
+
+    if (existing?.id) {
+      await supabaseAdmin.from('subscriptions').update({
+        stripe_customer_id, stripe_subscription_id, status: finalStatus,
+      }).eq('id', existing.id);
+    } else {
+      await supabaseAdmin.from('subscriptions').insert({
+        org_id: orgId, stripe_customer_id, stripe_subscription_id, status: finalStatus,
+      });
     }
-    if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
-      const sub = event.data.object as Stripe.Subscription;
-      const orgId = (sub.metadata as any)?.org_id;
-      if (orgId) {
-        const status = sub.status === 'active' || sub.status === 'trialing' ? 'active' : 'past_due';
-        await supabaseAdmin.from('orgs').update({ subscription_status: status }).eq('id', orgId);
+
+    const isActive = finalStatus === 'active' || finalStatus === 'trialing';
+    await supabaseAdmin.from('orgs').update({
+      subscription_status: isActive ? 'active' : 'past_due',
+    }).eq('id', orgId);
+  };
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const s = event.data.object as Stripe.Checkout.Session;
+        const orgId = s.metadata?.org_id;
+        if (orgId && s.mode === 'subscription' && s.subscription) {
+          const sub = await stripe.subscriptions.retrieve(s.subscription as string);
+          await upsertSubRow(orgId, sub);
+        }
+        break;
       }
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const sub = event.data.object as Stripe.Subscription;
+        const orgId = (sub.metadata as any)?.org_id;
+        if (orgId) await upsertSubRow(orgId, sub);
+        break;
+      }
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object as Stripe.Subscription;
+        const orgId = (sub.metadata as any)?.org_id;
+        if (orgId) await upsertSubRow(orgId, sub, 'canceled');
+        break;
+      }
+      default:
+        // ignore other events
+        break;
     }
     return NextResponse.json({ received: true });
   } catch (e: any) {
     return new NextResponse(e.message, { status: 500 });
   }
 }
-
-export const config = {
-  api: { bodyParser: false }
-};
