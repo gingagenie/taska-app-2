@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+.pnp.*
+
+# build output
+.next/
+out/
+
+# env & local config
+.env*
+!.env.example
+.vercel/
+
+# OS / editor junk
+.DS_Store
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
