@@ -1,4 +1,4 @@
-// tailwind.config.ts
+cat > tailwind.config.ts <<'EOF'
 import type { Config } from "tailwindcss";
 import typography from "@tailwindcss/typography";
 import animate from "tailwindcss-animate";
@@ -33,3 +33,4 @@ const config: Config = {
   plugins: [animate, typography],
 };
 export default config;
+EOF
