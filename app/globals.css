@@ -1,104 +1,52 @@
-@layer base {
-  :root {
-    /* fonts */
-    --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-
-    /* radii */
-    --radius: 14px;
-
-    /* brand — pulled from your logo gradient (teal → blue) */
-    --primary: #2a62f0;                    /* core blue */
-    --primary-foreground: #ffffff;
-    --ring: #3b82f6;
-
-    /* surface system */
-    --background: #f7f9fc;                 /* app bg */
-    --foreground: #0f172a;                 /* text */
-    --card: #ffffff;
-    --card-foreground: #0f172a;
-    --popover: #ffffff;
-    --popover-foreground: #0f172a;
-
-    /* neutrals */
-    --muted: #f1f5f9;
-    --muted-foreground: #64748b;
-    --secondary: #eef2ff;
-    --secondary-foreground: #1e3a8a;
-    --accent: #eff6ff;
-    --accent-foreground: #0c4a6e;
-    --destructive: #fee2e2;
-    --destructive-foreground: #991b1b;
-
-    --border: #e5e7eb;
-    --input: #e5e7eb;
-
-    /* status */
-    --success: #16a34a;
-    --warning: #fb923c;
-    --danger: #dc2626;
-
-    /* sidebar */
-    --sidebar: #ffffff;
-    --sidebar-foreground: #0f172a;
-    --sidebar-primary: var(--primary);
-    --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #eef2ff;
-    --sidebar-accent-foreground: #1e3a8a;
-    --sidebar-border: #e5e7eb;
-    --sidebar-ring: var(--ring);
-
-    /* section tints for badges in menu */
-    --jobs: #2563eb;           --jobs-light: #eef2ff;          --jobs-foreground: #ffffff;
-    --people: #059669;         --people-light: #ecfdf5;        --people-foreground: #ffffff;
-    --equipment: #7c3aed;      --equipment-light: #f5f3ff;     --equipment-foreground: #ffffff;
-    --schedule: #0ea5e9;       --schedule-light: #f0f9ff;      --schedule-foreground: #ffffff;
-    --financial: #f59e0b;      --financial-light: #fffbeb;     --financial-foreground: #1f2937;
-    --management: #64748b;     --management-light: #f1f5f9;    --management-foreground: #ffffff;
-  }
-
-  .dark {
-    --background: #0b1220;
-    --foreground: #e2e8f0;
-    --card: #0f172a;
-    --card-foreground: #e2e8f0;
-    --popover: #0f172a;
-    --popover-foreground: #e2e8f0;
-    --muted: #111827;
-    --muted-foreground: #9ca3af;
-    --secondary: #111827;
-    --secondary-foreground: #e5e7eb;
-    --accent: #0b1220;
-    --accent-foreground: #e5e7eb;
-    --destructive: #3f1d1d;
-    --destructive-foreground: #fecaca;
-    --border: #1f2937;
-    --input: #1f2937;
-  }
-}
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* utility polish */
+/* --- Custom Theme Layer --- */
 @layer base {
-  html, body, #__next { height: 100%; }
-  body { background: var(--background); color: var(--foreground); }
-}
+  :root {
+    --background: #f9fafb; /* light gray page bg */
+    --foreground: #111827; /* dark text */
+    --card: #ffffff; /* white cards */
+    --card-foreground: #111827;
 
-@layer components {
+    --primary: #2563eb; /* Taska blue */
+    --primary-foreground: #ffffff;
+
+    --muted: #f3f4f6;
+    --muted-foreground: #6b7280;
+
+    --border: #e5e7eb;
+    --ring: #2563eb;
+
+    --radius: 0.5rem;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold text-gray-900;
+  }
+
+  a {
+    @apply text-primary hover:underline;
+  }
+
+  button {
+    @apply px-3 py-2 rounded-md bg-primary text-white text-sm font-medium hover:bg-blue-600 transition;
+  }
+
+  input {
+    @apply border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary;
+  }
+
   .card {
-    @apply bg-card text-card-foreground rounded-2xl border border-border shadow-sm;
+    @apply rounded-xl bg-card p-4 shadow-sm border border-border;
   }
-  .btn {
-    @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition;
-  }
+
   .btn-primary {
-    @apply btn bg-primary text-primary-foreground hover:opacity-90;
-  }
-  .btn-ghost {
-    @apply btn bg-transparent hover:bg-muted text-foreground;
+    @apply px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-blue-600 transition;
   }
 }
