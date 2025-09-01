@@ -1,6 +1,6 @@
 'use client';
 import { createBrowserClient } from '@supabase/ssr';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 export default function Home() {
   const supabase = createBrowserClient(
@@ -8,9 +8,14 @@ export default function Home() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  // let env decide where the link redirects to
-  const SITE_URL =
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
+  // Prefer explicit env (prod), otherwise fall back to current origin (vercel preview/local)
+  const SITE_URL = useMemo(() => {
+    const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '');
+    if (fromEnv) return fromEnv;
+    if (typeof window !== 'undefined') return window.location.origin.replace(/\/$/, '');
+    return 'http://localhost:3000';
+  }, []);
+
   const REDIRECT_TO = `${SITE_URL}/dashboard`;
 
   const [email, setEmail] = useState('');
@@ -32,14 +37,11 @@ export default function Home() {
       setLoading(true);
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: REDIRECT_TO },
+        options: { emailRedirectTo: REDIRECT_TO }, // 👈 force where the magic link lands
       });
 
-      if (error) {
-        setErr(error.message);
-      } else {
-        setMsg('Magic link sent. Check your inbox (and spam).');
-      }
+      if (error) setErr(error.message);
+      else setMsg('Magic link sent. Check your inbox (and spam).');
     } catch (e: any) {
       setErr(e?.message || 'Unexpected error.');
     } finally {
@@ -73,7 +75,7 @@ export default function Home() {
       </p>
 
       <small style={{ color: '#666' }}>
-        Redirect target: <code>{REDIRECT_TO}</code>
+        Redirect target:&nbsp;<code>{REDIRECT_TO}</code>
       </small>
     </main>
   );
