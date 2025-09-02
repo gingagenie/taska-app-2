@@ -60,3 +60,5 @@ Visit `http://localhost:3000`:
 - Multi-tenancy is enforced through `org_id` + RLS. Keep it simple.
 - Extend: invoices PDF, Xero sync, push notifications, calendar UI, etc.
 # taska-app
+
+
