@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useParams, useRouter } from 'next/navigation';
 
-type Eq = {
+type Row = {
   id: string;
   org_id: string;
   customer_id: string | null;
   equipment_code: string | null;
-  make: string;
+  make: string | null;
   model: string | null;
   serial_number: string | null;
   notes: string | null;
@@ -20,128 +20,172 @@ export default function EditEquipmentPage() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
-  const params = useParams();
+
+  const { id } = useParams() as { id: string };
   const router = useRouter();
-  const eqId = String((params as any)?.id || '');
 
   const [orgId, setOrgId] = useState('');
   const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [row, setRow] = useState<Row | null>(null);
+
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // form state
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  // form state (mirrors "new" page fields)
   const [equipmentCode, setEquipmentCode] = useState('');
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [notes, setNotes] = useState('');
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      try {
-        // who am I / which org?
-        const { data: prof, error: pErr } = await supabase
-          .from('profiles')
-          .select('active_org_id')
-          .single();
-        if (pErr) throw pErr;
-        const oid = prof?.active_org_id as string;
-        setOrgId(oid);
+      // active org (for customer dropdown)
+      const { data: prof } = await supabase.from('profiles').select('active_org_id').single();
+      const oid = (prof?.active_org_id as string) || '';
+      setOrgId(oid);
 
-        // load customers for dropdown
-        const { data: custs, error: cErr } = await supabase
+      if (oid) {
+        const { data: cs } = await supabase
           .from('customers')
           .select('id,name')
           .eq('org_id', oid)
           .order('name', { ascending: true });
-        if (cErr) throw cErr;
-        setCustomers(custs || []);
-
-        // load equipment row
-        const { data: eq, error: eErr } = await supabase
-          .from('equipment')
-          .select(
-            'id, org_id, customer_id, equipment_code, make, model, serial_number, notes'
-          )
-          .eq('id', eqId)
-          .single();
-        if (eErr) throw eErr;
-
-        // hydrate
-        setCustomerId(eq?.customer_id ?? null);
-        setEquipmentCode(eq?.equipment_code ?? '');
-        setMake(eq?.make ?? '');
-        setModel(eq?.model ?? '');
-        setSerialNumber(eq?.serial_number ?? '');
-        setNotes(eq?.notes ?? '');
-      } catch (e: any) {
-        setErr(e.message || 'Failed to load equipment.');
-      } finally {
-        setLoading(false);
+        setCustomers(cs || []);
       }
+
+      // equipment row
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+
+      setRow(data as Row);
+
+      setEquipmentCode(data?.equipment_code ?? '');
+      setMake(data?.make ?? '');
+      setModel(data?.model ?? '');
+      setSerialNumber(data?.serial_number ?? '');
+      setNotes(data?.notes ?? '');
+      setCustomerId(data?.customer_id ?? null);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eqId]);
+  }, [id]);
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!orgId) return setErr('No active org.');
+
+    if (!row) return;
     if (!make.trim()) return setErr('Make is required.');
 
     setSaving(true);
     const { error } = await supabase
       .from('equipment')
       .update({
-        customer_id: customerId,
         equipment_code: equipmentCode || null,
         make,
         model: model || null,
         serial_number: serialNumber || null,
         notes: notes || null,
+        customer_id: customerId,
       })
-      .eq('id', eqId)
-      .eq('org_id', orgId);
+      .eq('id', row.id);
 
     setSaving(false);
+
     if (error) return setErr(error.message);
     router.push('/dashboard/equipment');
   }
 
   async function onDelete() {
+    if (!row) return;
     if (!confirm('Delete this equipment? This cannot be undone.')) return;
-    setSaving(true);
-    const { error } = await supabase.from('equipment').delete().eq('id', eqId);
-    setSaving(false);
+
+    setDeleting(true);
+    const { error } = await supabase.from('equipment').delete().eq('id', row.id);
+    setDeleting(false);
+
     if (error) return setErr(error.message);
     router.push('/dashboard/equipment');
   }
 
-  if (loading) {
-    return <p className="text-sm text-gray-500">Loading equipment…</p>;
-  }
+  const input =
+    'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm ' +
+    'focus:outline-none focus:ring-2 focus:ring-blue-500';
+  const label = 'block text-sm font-medium text-gray-800';
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="t-h2">Edit Equipment</h2>
-        <button
-          onClick={onDelete}
-          className="t-btn t-btn--danger"
-          disabled={saving}
-        >
-          Delete
-        </button>
-      </div>
+      <h2 className="text-xl font-semibold">Edit Equipment</h2>
 
       <form onSubmit={onSave} className="space-y-6">
-        <div className="t-card p-5 space-y-4">
+        <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-5 max-w-3xl">
+          {/* Equipment ID */}
           <div>
-            <label className="t-label">Customer</label>
+            <label className={label}>Equipment ID</label>
+            <input
+              className={input}
+              placeholder="e.g. FORK-001"
+              value={equipmentCode}
+              onChange={(e) => setEquipmentCode(e.target.value)}
+            />
+          </div>
+
+          {/* Make / Model / Serial */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <label className={label}>
+                Make <span className="text-red-500">*</span>
+              </label>
+              <input
+                className={input}
+                value={make}
+                onChange={(e) => setMake(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className={label}>Model</label>
+              <input
+                className={input}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={label}>Serial #</label>
+              <input
+                className={input}
+                value={serialNumber}
+                onChange={(e) => setSerialNumber(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className={label}>Notes</label>
+            <textarea
+              className={`${input} min-h-[96px]`}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          {/* Customer (last) */}
+          <div>
+            <label className={label}>Customer</label>
             <select
-              className="t-select"
+              className={input}
               value={customerId || ''}
               onChange={(e) => setCustomerId(e.target.value || null)}
             >
@@ -153,68 +197,34 @@ export default function EditEquipmentPage() {
               ))}
             </select>
           </div>
-
-          <div className="t-grid-3">
-            <div>
-              <label className="t-label">Equipment ID</label>
-              <input
-                className="t-input"
-                placeholder="e.g. FORK-001"
-                value={equipmentCode}
-                onChange={(e) => setEquipmentCode(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="t-label">Make *</label>
-              <input
-                className="t-input"
-                value={make}
-                onChange={(e) => setMake(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="t-label">Model</label>
-              <input
-                className="t-input"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="t-label">Serial #</label>
-            <input
-              className="t-input"
-              value={serialNumber}
-              onChange={(e) => setSerialNumber(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="t-label">Notes</label>
-            <textarea
-              className="t-textarea"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
         </div>
 
-        {err && <p className="text-red-600 text-sm">{err}</p>}
+        {err && <p className="text-sm text-red-600">{err}</p>}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="submit"
-            className="t-btn t-btn--primary"
             disabled={saving}
+            className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
-          <a href="/dashboard/equipment" className="t-btn">
+
+          <a
+            href="/dashboard/equipment"
+            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-800 shadow-sm hover:bg-gray-50"
+          >
             Cancel
           </a>
+
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleting}
+            className="ml-auto inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-white shadow-sm hover:bg-red-700 disabled:opacity-60"
+          >
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
         </div>
       </form>
     </div>
