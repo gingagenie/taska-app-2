@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.t-nav { display: flex; flex-direction: column; }
+.t-nav__item { display: block; margin: 2px 0; }
+
+
 /* tiny sanity styles */
 html, body {
   height: 100%;
