@@ -1,231 +1,89 @@
 'use client';
-
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
+import { getActiveOrgIdClient } from '@/lib/getActiveOrgIdClient';
 
-// Reusable badge
-function StatusBadge({ status }: { status?: string | null }) {
-  const s = (status ?? 'draft').toLowerCase();
-  const map: Record<string, string> = {
-    draft: 'bg-gray-100 text-gray-800',
-    scheduled: 'bg-blue-100 text-blue-800',
-    in_progress: 'bg-amber-100 text-amber-800',
-    on_hold: 'bg-purple-100 text-purple-800',
-    completed: 'bg-green-100 text-green-800',
-    cancelled: 'bg-red-100 text-red-800',
-  };
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${map[s] ?? map.draft}`}>
-      {s.replace('_', ' ')}
-    </span>
-  );
-}
-
-type JobRow = {
+type Job = {
   id: string;
-  org_id: string;
   title: string;
-  status: string | null;
   scheduled_for: string | null;
-  customer?: { id: string; name: string } | null;
-  site?: { id: string; line1: string | null; city: string | null; state: string | null; postcode: string | null } | null;
+  status?: string | null;
 };
 
-export default function DashboardPage() {
+export default function Dashboard() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  const [orgId, setOrgId] = useState<string>('');
-  const [todayJobs, setTodayJobs] = useState<JobRow[]>([]);
-  const [upcomingJobs, setUpcomingJobs] = useState<JobRow[]>([]);
+  const [orgId, setOrgId] = useState('');
+  const [today, setToday] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  function dayRangeISO(daysFromNow = 0, daysSpan = 1) {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() + daysFromNow);
-    const end = new Date(start);
-    end.setDate(end.getDate() + daysSpan);
-    return { startISO: start.toISOString(), endISO: end.toISOString() };
-  }
 
   useEffect(() => {
-    supabase.from('profiles').select('active_org_id').single().then(({ data, error }) => {
-      if (error) setErr(error.message);
-      setOrgId(data?.active_org_id ?? '');
-    });
+    (async () => {
+      const { orgId } = await getActiveOrgIdClient();
+      setOrgId(orgId);
+    })();
   }, []);
 
   useEffect(() => {
-    if (!orgId) return;
+    if (!orgId) { setLoading(false); return; }
+
     (async () => {
-      setLoading(true); setErr(null);
+      setLoading(true);
+      // load "today" (simple variant)
+      const start = new Date(); start.setHours(0,0,0,0);
+      const end = new Date();   end.setHours(23,59,59,999);
 
-      const { startISO: tStart, endISO: tEnd } = dayRangeISO(0, 1);
-      const { data: t, error: tErr } = await supabase
+      const { data } = await supabase
         .from('jobs')
-        .select(`
-          id, org_id, title, status, scheduled_for,
-          customer:customers ( id, name ),
-          site:customer_addresses ( id, line1, city, state, postcode )
-        `)
+        .select('id,title,scheduled_for,status')
         .eq('org_id', orgId)
-        .gte('scheduled_for', tStart)
-        .lt('scheduled_for', tEnd)
-        .order('scheduled_for', { ascending: true })
-        .limit(50);
-      if (tErr) setErr(tErr.message);
-      setTodayJobs((t as any[]) ?? []);
+        .gte('scheduled_for', start.toISOString())
+        .lte('scheduled_for', end.toISOString())
+        .order('scheduled_for', { ascending: true });
 
-      const { startISO: uStart, endISO: uEnd } = dayRangeISO(1, 7);
-      const { data: u, error: uErr } = await supabase
-        .from('jobs')
-        .select(`
-          id, org_id, title, status, scheduled_for,
-          customer:customers ( id, name ),
-          site:customer_addresses ( id, line1, city, state, postcode )
-        `)
-        .eq('org_id', orgId)
-        .gte('scheduled_for', uStart)
-        .lt('scheduled_for', uEnd)
-        .order('scheduled_for', { ascending: true })
-        .limit(100);
-      if (uErr) setErr(uErr.message);
-      setUpcomingJobs((u as any[]) ?? []);
-
+      setToday(data || []);
       setLoading(false);
     })();
   }, [orgId]);
 
-  async function markCompleted(id: string) {
-    // optimistic update
-    setTodayJobs((prev) => prev.map(j => j.id === id ? { ...j, status: 'completed' } : j));
-    setUpcomingJobs((prev) => prev.map(j => j.id === id ? { ...j, status: 'completed' } : j));
-    const { error } = await supabase.from('jobs').update({ status: 'completed' }).eq('id', id);
-    if (error) {
-      // revert if failed
-      setTodayJobs((prev) => prev.map(j => j.id === id ? { ...j, status: j.status } : j));
-      setUpcomingJobs((prev) => prev.map(j => j.id === id ? { ...j, status: j.status } : j));
-      alert(error.message);
-    }
-  }
-
   return (
-    <main className="grid gap-4 sm:gap-6">
-      {/* Header */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold sm:text-2xl">Dashboard</h1>
-        <div className="flex gap-2">
-          <Link href="/dashboard/jobs/new"><button className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">+ New Job</button></Link>
-          <Link href="/dashboard/jobs"><button className="rounded-md border px-4 py-2 hover:bg-gray-50">All Jobs</button></Link>
+    <main className="p-4">
+      <h2 className="text-xl font-semibold mb-4">Dashboard</h2>
+
+      {!orgId && (
+        <div className="rounded-md border p-3 bg-amber-50 text-amber-900 mb-4">
+          No active organization yet. Create one in <a className="underline" href="/dashboard/orgs">Orgs</a>.
         </div>
-      </div>
+      )}
 
-      {err && <p className="text-red-600">{err}</p>}
-
-      {/* Panels stack on mobile, 2-col on lg */}
-      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-        {/* Jobs Today */}
-        <section className="rounded-2xl border p-3 sm:p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold sm:text-lg">Jobs Today</h2>
-            <Link href="/dashboard/jobs/new" className="text-sm text-blue-600 hover:underline">Add</Link>
-          </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <section>
+          <h3 className="font-medium mb-2">Jobs Today</h3>
           {loading ? (
-            <p>Loading…</p>
-          ) : todayJobs.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-4 text-sm text-gray-500">
-              No jobs scheduled for today. <Link href="/dashboard/jobs/new" className="text-blue-600 hover:underline">Create one →</Link>
-            </div>
+            <div className="text-sm text-gray-500">Loading…</div>
+          ) : today.length === 0 ? (
+            <div className="text-sm text-gray-500">No jobs today.</div>
           ) : (
-            <ul className="grid gap-2">
-              {todayJobs.map((j) => {
-                const when = j.scheduled_for ? new Date(j.scheduled_for).toLocaleTimeString() : '—';
-                const site = j.site ? [j.site.line1, j.site.city, j.site.state, j.site.postcode].filter(Boolean).join(', ') : '';
-                const isCompleted = (j.status ?? '').toLowerCase() === 'completed';
-                return (
-                  <li key={j.id} className="rounded-xl border p-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{j.title}</div>
-                        <div className="truncate text-sm text-gray-500">
-                          {j.customer?.name ? `${j.customer.name} • ` : ''}{site || '—'}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <div className="text-sm text-gray-600">{when}</div>
-                        <StatusBadge status={j.status} />
-                        {!isCompleted && (
-                          <button
-                            onClick={() => markCompleted(j.id)}
-                            className="rounded-md bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700"
-                          >
-                            Complete
-                          </button>
-                        )}
-                        <Link href={`/dashboard/jobs/${j.id}`} className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50">
-                          View
-                        </Link>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
+            <ul className="space-y-2">
+              {today.map(j => (
+                <li key={j.id} className="flex items-center justify-between rounded-md border p-2">
+                  <div>
+                    <div className="font-medium">{j.title}</div>
+                    <div className="text-xs text-gray-500">{j.scheduled_for ? new Date(j.scheduled_for).toLocaleString() : '—'}</div>
+                  </div>
+                  <a className="text-sm rounded-md border px-3 py-1 hover:bg-gray-50" href={`/dashboard/jobs/${j.id}`}>View</a>
+                </li>
+              ))}
             </ul>
           )}
         </section>
 
-        {/* Upcoming (7 days) */}
-        <section className="rounded-2xl border p-3 sm:p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold sm:text-lg">Upcoming (7 days)</h2>
-            <Link href="/dashboard/jobs" className="text-sm text-blue-600 hover:underline">See all</Link>
-          </div>
-
-          {loading ? (
-            <p>Loading…</p>
-          ) : upcomingJobs.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-4 text-sm text-gray-500">
-              Nothing scheduled in the next week.
-            </div>
-          ) : (
-            <ul className="grid gap-2">
-              {upcomingJobs.slice(0, 8).map((j) => {
-                const when = j.scheduled_for ? new Date(j.scheduled_for).toLocaleString() : '—';
-                const isCompleted = (j.status ?? '').toLowerCase() === 'completed';
-                return (
-                  <li key={j.id} className="rounded-xl border p-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{j.title}</div>
-                        <div className="truncate text-sm text-gray-500">{j.customer?.name ?? '—'}</div>
-                      </div>
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <div className="text-sm text-gray-600">{when}</div>
-                        <StatusBadge status={j.status} />
-                        {!isCompleted && (
-                          <button
-                            onClick={() => markCompleted(j.id)}
-                            className="rounded-md bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700"
-                          >
-                            Complete
-                          </button>
-                        )}
-                        <Link href={`/dashboard/jobs/${j.id}`} className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50">
-                          View
-                        </Link>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+        <section>
+          <h3 className="font-medium mb-2">Upcoming Jobs</h3>
+          <div className="text-sm text-gray-500">Coming soon.</div>
         </section>
       </div>
     </main>
