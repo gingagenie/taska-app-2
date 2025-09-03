@@ -18,15 +18,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span className="font-semibold">Taska</span>
               </div>
 
-              <nav className="space-y-1">
-                <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard">Dashboard</Link>
-                <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard/jobs">Jobs</Link>
-                <Link className="t-nav__item" href="/dashboard/customers">Customers</Link>
-                <Link className="t-nav__item" href="/dashboard/equipment">Equipment</Link>
-                <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard/orgs">Orgs</Link>
-                <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard/billing">Billing</Link>
-                <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard/settings">Settings</Link>
+              <nav className="t-nav">
+                <Link className="t-nav__item block my-0.5" href="/dashboard">Dashboard</Link>
+                <Link className="t-nav__item block my-0.5" href="/dashboard/jobs">Jobs</Link>
+                <Link className="t-nav__item block my-0.5" href="/dashboard/customers">Customers</Link>
+                <Link className="t-nav__item block my-0.5" href="/dashboard/equipment">Equipment</Link>
+                <Link className="t-nav__item block my-0.5" href="/dashboard/orgs">Orgs</Link>
+                <Link className="t-nav__item block my-0.5" href="/dashboard/billing">Billing</Link>
+                <Link className="t-nav__item block my-0.5" href="/dashboard/settings">Settings</Link>
               </nav>
+
 
               <div className="mt-6 rounded-xl bg-sidebar-accent/70 px-3 py-2 text-xs text-muted-foreground">
                 PRO features: Quotes • Invoices • Schedule
