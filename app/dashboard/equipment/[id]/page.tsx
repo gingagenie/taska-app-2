@@ -1,130 +1,157 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useParams, useRouter } from 'next/navigation';
 
-function CustomerSelect({ orgId, value, onChange }:{
-  orgId: string; value?: string|null; onChange:(id:string|null)=>void
-}) {
-  const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-  const [q, setQ] = useState(''); const [rows, setRows] = useState<{id:string;name:string}[]>([]);
-  const t = useRef<number|null>(null);
+type Customer = { id: string; name: string | null };
 
-  useEffect(() => {
-    if (!orgId) return;
-    if (t.current) window.clearTimeout(t.current);
-    t.current = window.setTimeout(async () => {
-      const { data } = await supabase.from('customers').select('id,name').eq('org_id', orgId).ilike('name', `%${q}%`).limit(20);
-      setRows((data as any[]) ?? []);
-    }, 200);
-    return () => { if (t.current) window.clearTimeout(t.current); };
-  }, [orgId, q]);
-
-  return (
-    <div className="grid gap-2">
-      <label className="text-sm font-medium">Customer</label>
-      <input className="rounded-md border px-3 py-2" placeholder="Search customer…" value={q} onChange={e=>setQ(e.target.value)} />
-      <select className="rounded-md border px-3 py-2" value={value ?? ''} onChange={e=>onChange(e.target.value || null)}>
-        <option value="">Unassigned</option>
-        {rows.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-      </select>
-    </div>
+export default function EditEquipmentPage() {
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
-}
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
 
-export default function EquipmentEditPage() {
-  const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-  const router = useRouter(); const p = useParams();
-  const id = typeof p?.id === 'string' ? p.id : Array.isArray(p?.id) ? p.id[0] : '';
+  const [orgId, setOrgId] = useState<string>('');
+  const [customers, setCustomers] = useState<Customer[]>([]);
 
-  const [make, setMake] = useState(''); const [model, setModel] = useState(''); const [serial, setSerial] = useState('');
-  const [notes, setNotes] = useState(''); const [customerId, setCustomerId] = useState<string|null>(null);
-  const [orgId, setOrgId] = useState(''); const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false); const [deleting, setDeleting] = useState(false);
-  const [err, setErr] = useState<string|null>(null);
+  // fields
+  const [customerId, setCustomerId] = useState<string>('');
+  const [make, setMake] = useState('');
+  const [model, setModel] = useState('');
+  const [serial, setSerial] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('profiles').select('active_org_id').single()
-      .then(({ data }) => setOrgId(data?.active_org_id ?? ''));
-  }, []);
-
-  useEffect(() => {
-    if (!id) return;
     (async () => {
-      setErr(null);
-      const { data, error } = await supabase
+      // org
+      const { data: prof } = await supabase.from('profiles').select('active_org_id').single();
+      const oid = prof?.active_org_id as string;
+      setOrgId(oid || '');
+
+      // load dropdown customers
+      if (oid) {
+        const { data: rows } = await supabase
+          .from('customers')
+          .select('id,name')
+          .eq('org_id', oid)
+          .order('name', { ascending: true });
+        setCustomers((rows || []) as Customer[]);
+      }
+
+      // load equipment
+      const { data: eq, error } = await supabase
         .from('equipment')
-        .select('id, make, model, serial_number, notes, customer_id')
-        .eq('id', id)
+        .select('id, customer_id, make, model, serial_number, notes')
+        .eq('id', params.id)
         .single();
+
       if (error) setErr(error.message);
-      setMake(data?.make ?? ''); setModel(data?.model ?? ''); setSerial(data?.serial_number ?? '');
-      setNotes(data?.notes ?? ''); setCustomerId(data?.customer_id ?? null);
+      else if (eq) {
+        setCustomerId(eq.customer_id ?? '');
+        setMake(eq.make ?? '');
+        setModel(eq.model ?? '');
+        setSerial(eq.serial_number ?? '');
+        setNotes(eq.notes ?? '');
+      }
+
       setLoading(false);
     })();
-  }, [id]);
+  }, [params.id]);
 
-  async function save(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true); setErr(null);
-    const { error } = await supabase.from('equipment').update({
-      make: make.trim() || null,
-      model: model.trim() || null,
-      serial_number: serial.trim() || null,
-      notes: notes.trim() || null,
-      customer_id: customerId || null,
-    }).eq('id', id);
+    setErr(null);
+    if (!make.trim()) return setErr('Make is required.');
+    setSaving(true);
+
+    const { error } = await supabase
+      .from('equipment')
+      .update({
+        customer_id: customerId || null,
+        make: make || null,
+        model: model || null,
+        serial_number: serial || null,
+        notes: notes || null,
+      })
+      .eq('id', params.id);
+
     setSaving(false);
-    if (error) return setErr(error.message);
-    router.push('/dashboard/equipment');
+
+    if (error) setErr(error.message);
+    else router.push('/dashboard/equipment');
   }
 
-  async function remove() {
+  async function handleDelete() {
     if (!confirm('Delete this equipment?')) return;
-    setDeleting(true); setErr(null);
-    const { error } = await supabase.from('equipment').delete().eq('id', id);
-    setDeleting(false);
-    if (error) return setErr(error.message);
-    router.push('/dashboard/equipment');
+    const { error } = await supabase.from('equipment').delete().eq('id', params.id);
+    if (error) alert(error.message);
+    else router.push('/dashboard/equipment');
   }
 
-  if (!id) return <main className="p-4">Missing id</main>;
-  if (loading) return <main className="p-4">Loading…</main>;
+  if (loading) return <p>Loading…</p>;
 
   return (
-    <main className="grid gap-4 sm:gap-6 max-w-xl">
-      <h1 className="text-xl font-semibold sm:text-2xl">Edit Equipment</h1>
-      <form onSubmit={save} className="grid gap-3">
-        <label className="grid gap-1">
-          <span className="text-sm font-medium">Make</span>
-          <input className="rounded-md border px-3 py-2" value={make} onChange={e=>setMake(e.target.value)} />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-sm font-medium">Model</span>
-          <input className="rounded-md border px-3 py-2" value={model} onChange={e=>setModel(e.target.value)} />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-sm font-medium">Serial Number</span>
-          <input className="rounded-md border px-3 py-2" value={serial} onChange={e=>setSerial(e.target.value)} />
-        </label>
-        <label className="grid gap-1">
-          <span className="text-sm font-medium">Notes</span>
-          <textarea className="rounded-md border px-3 py-2" rows={3} value={notes} onChange={e=>setNotes(e.target.value)} />
-        </label>
+    <div className="space-y-6">
+      <h2 className="t-h2">Edit Equipment</h2>
 
-        <CustomerSelect orgId={orgId} value={customerId} onChange={setCustomerId} />
+      <form onSubmit={handleSave} className="t-card space-y-4 p-4">
+        <div>
+          <label className="t-label">Customer</label>
+          <select
+            className="t-input"
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+          >
+            <option value="">Unassigned</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name || 'Unnamed'}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        {err && <p className="text-sm text-red-600">{err}</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="t-label">Make *</label>
+            <input className="t-input" value={make} onChange={(e) => setMake(e.target.value)} />
+          </div>
+          <div>
+            <label className="t-label">Model</label>
+            <input className="t-input" value={model} onChange={(e) => setModel(e.target.value)} />
+          </div>
+          <div>
+            <label className="t-label">Serial #</label>
+            <input className="t-input" value={serial} onChange={(e) => setSerial(e.target.value)} />
+          </div>
+        </div>
+
+        <div>
+          <label className="t-label">Notes</label>
+          <textarea className="t-input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+
+        {err && <p className="text-red-600 text-sm">{err}</p>}
+
         <div className="flex gap-2">
-          <button className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700" disabled={saving}>
+          <button type="submit" className="t-btn t-btn--primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </button>
-          <button type="button" onClick={remove} className="rounded-md border px-4 py-2 text-red-600 hover:bg-red-50" disabled={deleting}>
-            {deleting ? 'Deleting…' : 'Delete'}
+          <button type="button" className="t-btn" onClick={() => router.push('/dashboard/equipment')}>
+            Cancel
+          </button>
+          <button type="button" className="t-btn t-btn--danger ml-auto" onClick={handleDelete}>
+            Delete
           </button>
         </div>
       </form>
-    </main>
+    </div>
   );
 }
