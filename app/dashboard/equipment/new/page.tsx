@@ -12,48 +12,53 @@ export default function NewEquipmentPage() {
   const router = useRouter();
 
   const [orgId, setOrgId] = useState('');
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [customerId, setCustomerId] = useState<string | null>(null);
-
-  const [equipmentCode, setEquipmentCode] = useState('');
-  const [make, setMake] = useState('');
-  const [model, setModel] = useState('');
-  const [serialNumber, setSerialNumber] = useState('');
-  const [notes, setNotes] = useState('');
-
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // --- form state (Equipment ID first; Customer last) ---
+  const [equipmentCode, setEquipmentCode] = useState('');  // Equipment ID
+  const [make, setMake] = useState('');                    // required
+  const [model, setModel] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [notes, setNotes] = useState('');
+  const [customerId, setCustomerId] = useState<string | null>(null);
+
   useEffect(() => {
     (async () => {
-      const { data: profile } = await supabase
+      // active org
+      const { data: prof } = await supabase
         .from('profiles')
         .select('active_org_id')
         .single();
-      const oid = profile?.active_org_id as string;
+      const oid = (prof?.active_org_id as string) || '';
       setOrgId(oid);
 
-      const { data: custs } = await supabase
-        .from('customers')
-        .select('id,name')
-        .eq('org_id', oid)
-        .order('name', { ascending: true });
-
-      setCustomers(custs || []);
+      // customers for dropdown
+      if (oid) {
+        const { data: rows } = await supabase
+          .from('customers')
+          .select('id,name')
+          .eq('org_id', oid)
+          .order('name', { ascending: true });
+        setCustomers(rows || []);
+      }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
+    setErr(null);
     if (!orgId) return setErr('No active org.');
     if (!make.trim()) return setErr('Make is required.');
 
     setSaving(true);
     const { error } = await supabase.from('equipment').insert({
       org_id: orgId,
-      customer_id: customerId,
-      equipment_code: equipmentCode || null,
-      make,
+      customer_id: customerId,                      // last field in form
+      equipment_code: equipmentCode || null,        // Equipment ID (first)
+      make,                                         // required
       model: model || null,
       serial_number: serialNumber || null,
       notes: notes || null,
@@ -66,12 +71,63 @@ export default function NewEquipmentPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="t-h2">Add Equipment</h2>
-      </div>
+      <h2 className="t-h2">Add Equipment</h2>
 
       <form onSubmit={onSave} className="space-y-6">
         <div className="t-card p-5 space-y-4">
+
+          {/* Row 1: Equipment ID */}
+          <div>
+            <label className="t-label">Equipment ID</label>
+            <input
+              className="t-input"
+              placeholder="e.g. FORK-001"
+              value={equipmentCode}
+              onChange={(e) => setEquipmentCode(e.target.value)}
+            />
+            <p className="t-help">Your own identifier (sticker/asset tag).</p>
+          </div>
+
+          {/* Row 2: Make / Model / Serial */}
+          <div className="t-grid-3">
+            <div>
+              <label className="t-label">Make *</label>
+              <input
+                className="t-input"
+                value={make}
+                onChange={(e) => setMake(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="t-label">Model</label>
+              <input
+                className="t-input"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="t-label">Serial #</label>
+              <input
+                className="t-input"
+                value={serialNumber}
+                onChange={(e) => setSerialNumber(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Row 3: Notes */}
+          <div>
+            <label className="t-label">Notes</label>
+            <textarea
+              className="t-textarea"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          {/* Row 4 (last): Customer */}
           <div>
             <label className="t-label">Customer</label>
             <select
@@ -87,67 +143,15 @@ export default function NewEquipmentPage() {
               ))}
             </select>
           </div>
-
-          <div className="t-grid-3">
-            <div>
-              <label className="t-label">Equipment ID</label>
-              <input
-                className="t-input"
-                placeholder="e.g. FORK-001"
-                value={equipmentCode}
-                onChange={(e) => setEquipmentCode(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="t-label">Make *</label>
-              <input
-                className="t-input"
-                value={make}
-                onChange={(e) => setMake(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="t-label">Model</label>
-              <input
-                className="t-input"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="t-label">Serial #</label>
-            <input
-              className="t-input"
-              value={serialNumber}
-              onChange={(e) => setSerialNumber(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="t-label">Notes</label>
-            <textarea
-              className="t-textarea"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
         </div>
 
         {err && <p className="text-red-600 text-sm">{err}</p>}
 
         <div className="flex gap-2">
-          <button
-            type="submit"
-            className="t-btn t-btn--primary"
-            disabled={saving}
-          >
+          <button type="submit" className="t-btn t-btn--primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </button>
-          <a href="/dashboard/equipment" className="t-btn">
-            Cancel
-          </a>
+          <a href="/dashboard/equipment" className="t-btn">Cancel</a>
         </div>
       </form>
     </div>
