@@ -21,6 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <nav className="space-y-1">
                 <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard">Dashboard</Link>
                 <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard/jobs">Jobs</Link>
+                <Link className="t-nav__item" href="/dashboard/customers">Customers</Link>
+                <Link className="t-nav__item" href="/dashboard/equipment">Equipment</Link>
                 <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard/orgs">Orgs</Link>
                 <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard/billing">Billing</Link>
                 <Link className="block rounded-lg px-3 py-2 hover:bg-muted" href="/dashboard/settings">Settings</Link>
