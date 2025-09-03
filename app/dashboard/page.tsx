@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 
-// Tiny badge (no extra files)
+// Reusable badge
 function StatusBadge({ status }: { status?: string | null }) {
   const s = (status ?? 'draft').toLowerCase();
   const map: Record<string, string> = {
@@ -44,15 +44,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // helper: ISO range for today and next 7 days (UTC based; good enough for now)
   function dayRangeISO(daysFromNow = 0, daysSpan = 1) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() + daysFromNow);
-
     const end = new Date(start);
     end.setDate(end.getDate() + daysSpan);
-
     return { startISO: start.toISOString(), endISO: end.toISOString() };
   }
 
@@ -68,7 +65,6 @@ export default function DashboardPage() {
     (async () => {
       setLoading(true); setErr(null);
 
-      // Today
       const { startISO: tStart, endISO: tEnd } = dayRangeISO(0, 1);
       const { data: t, error: tErr } = await supabase
         .from('jobs')
@@ -85,7 +81,6 @@ export default function DashboardPage() {
       if (tErr) setErr(tErr.message);
       setTodayJobs((t as any[]) ?? []);
 
-      // Upcoming (next 7 days)
       const { startISO: uStart, endISO: uEnd } = dayRangeISO(1, 7);
       const { data: u, error: uErr } = await supabase
         .from('jobs')
@@ -106,14 +101,24 @@ export default function DashboardPage() {
     })();
   }, [orgId]);
 
-  const emptyToday = !loading && todayJobs.length === 0;
-  const emptyUpcoming = !loading && upcomingJobs.length === 0;
+  async function markCompleted(id: string) {
+    // optimistic update
+    setTodayJobs((prev) => prev.map(j => j.id === id ? { ...j, status: 'completed' } : j));
+    setUpcomingJobs((prev) => prev.map(j => j.id === id ? { ...j, status: 'completed' } : j));
+    const { error } = await supabase.from('jobs').update({ status: 'completed' }).eq('id', id);
+    if (error) {
+      // revert if failed
+      setTodayJobs((prev) => prev.map(j => j.id === id ? { ...j, status: j.status } : j));
+      setUpcomingJobs((prev) => prev.map(j => j.id === id ? { ...j, status: j.status } : j));
+      alert(error.message);
+    }
+  }
 
   return (
-    <main className="grid gap-6">
+    <main className="grid gap-4 sm:gap-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl font-semibold sm:text-2xl">Dashboard</h1>
         <div className="flex gap-2">
           <Link href="/dashboard/jobs/new"><button className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">+ New Job</button></Link>
           <Link href="/dashboard/jobs"><button className="rounded-md border px-4 py-2 hover:bg-gray-50">All Jobs</button></Link>
@@ -122,18 +127,18 @@ export default function DashboardPage() {
 
       {err && <p className="text-red-600">{err}</p>}
 
-      {/* Two-column panels */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Panels stack on mobile, 2-col on lg */}
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
         {/* Jobs Today */}
-        <section className="rounded-2xl border p-4">
+        <section className="rounded-2xl border p-3 sm:p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Jobs Today</h2>
+            <h2 className="text-base font-semibold sm:text-lg">Jobs Today</h2>
             <Link href="/dashboard/jobs/new" className="text-sm text-blue-600 hover:underline">Add</Link>
           </div>
 
           {loading ? (
             <p>Loading…</p>
-          ) : emptyToday ? (
+          ) : todayJobs.length === 0 ? (
             <div className="rounded-xl border border-dashed p-4 text-sm text-gray-500">
               No jobs scheduled for today. <Link href="/dashboard/jobs/new" className="text-blue-600 hover:underline">Create one →</Link>
             </div>
@@ -142,18 +147,31 @@ export default function DashboardPage() {
               {todayJobs.map((j) => {
                 const when = j.scheduled_for ? new Date(j.scheduled_for).toLocaleTimeString() : '—';
                 const site = j.site ? [j.site.line1, j.site.city, j.site.state, j.site.postcode].filter(Boolean).join(', ') : '';
+                const isCompleted = (j.status ?? '').toLowerCase() === 'completed';
                 return (
-                  <li key={j.id} className="flex items-center justify-between rounded-xl border p-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{j.title}</div>
-                      <div className="truncate text-sm text-gray-500">
-                        {j.customer?.name ? `${j.customer.name} • ` : ''}{site || '—'}
+                  <li key={j.id} className="rounded-xl border p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{j.title}</div>
+                        <div className="truncate text-sm text-gray-500">
+                          {j.customer?.name ? `${j.customer.name} • ` : ''}{site || '—'}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <div className="text-sm text-gray-600">{when}</div>
-                      <StatusBadge status={j.status} />
-                      <Link href={`/dashboard/jobs/${j.id}`} className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50">View</Link>
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <div className="text-sm text-gray-600">{when}</div>
+                        <StatusBadge status={j.status} />
+                        {!isCompleted && (
+                          <button
+                            onClick={() => markCompleted(j.id)}
+                            className="rounded-md bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700"
+                          >
+                            Complete
+                          </button>
+                        )}
+                        <Link href={`/dashboard/jobs/${j.id}`} className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50">
+                          View
+                        </Link>
+                      </div>
                     </div>
                   </li>
                 );
@@ -162,16 +180,16 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Upcoming Jobs (7 days) */}
-        <section className="rounded-2xl border p-4">
+        {/* Upcoming (7 days) */}
+        <section className="rounded-2xl border p-3 sm:p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Upcoming (7 days)</h2>
+            <h2 className="text-base font-semibold sm:text-lg">Upcoming (7 days)</h2>
             <Link href="/dashboard/jobs" className="text-sm text-blue-600 hover:underline">See all</Link>
           </div>
 
           {loading ? (
             <p>Loading…</p>
-          ) : emptyUpcoming ? (
+          ) : upcomingJobs.length === 0 ? (
             <div className="rounded-xl border border-dashed p-4 text-sm text-gray-500">
               Nothing scheduled in the next week.
             </div>
@@ -179,16 +197,29 @@ export default function DashboardPage() {
             <ul className="grid gap-2">
               {upcomingJobs.slice(0, 8).map((j) => {
                 const when = j.scheduled_for ? new Date(j.scheduled_for).toLocaleString() : '—';
+                const isCompleted = (j.status ?? '').toLowerCase() === 'completed';
                 return (
-                  <li key={j.id} className="flex items-center justify-between rounded-xl border p-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{j.title}</div>
-                      <div className="truncate text-sm text-gray-500">{j.customer?.name ?? '—'}</div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <div className="text-sm text-gray-600">{when}</div>
-                      <StatusBadge status={j.status} />
-                      <Link href={`/dashboard/jobs/${j.id}`} className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50">View</Link>
+                  <li key={j.id} className="rounded-xl border p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{j.title}</div>
+                        <div className="truncate text-sm text-gray-500">{j.customer?.name ?? '—'}</div>
+                      </div>
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <div className="text-sm text-gray-600">{when}</div>
+                        <StatusBadge status={j.status} />
+                        {!isCompleted && (
+                          <button
+                            onClick={() => markCompleted(j.id)}
+                            className="rounded-md bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700"
+                          >
+                            Complete
+                          </button>
+                        )}
+                        <Link href={`/dashboard/jobs/${j.id}`} className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50">
+                          View
+                        </Link>
+                      </div>
                     </div>
                   </li>
                 );
