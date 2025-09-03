@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 
-// Badge again (same as dashboard)
 function StatusBadge({ status }: { status?: string | null }) {
   const s = (status ?? 'draft').toLowerCase();
   const map: Record<string, string> = {
@@ -86,10 +85,32 @@ export default function JobsIndexPage() {
     });
   }, [rows, query, status]);
 
+  async function markCompleted(id: string) {
+    // optimistic
+    setRows(prev => prev.map(r => r.id === id ? { ...r, status: 'completed' } : r));
+    const { error } = await supabase.from('jobs').update({ status: 'completed' }).eq('id', id);
+    if (error) {
+      // revert (in practice we’d store prev status per-row; here it’s fine)
+      setErr(error.message);
+      await reload(); // reload from server as fallback
+    }
+  }
+
+  async function reload() {
+    if (!orgId) return;
+    const { data } = await supabase
+      .from('jobs')
+      .select(`id, title, status, scheduled_for, customer:customers ( id, name )`)
+      .eq('org_id', orgId)
+      .order('scheduled_for', { ascending: false })
+      .limit(400);
+    setRows((data as any[]) || []);
+  }
+
   return (
-    <main className="grid gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Jobs</h1>
+    <main className="grid gap-4 sm:gap-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl font-semibold sm:text-2xl">Jobs</h1>
         <Link href="/dashboard/jobs/new">
           <button className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">+ New Job</button>
         </Link>
@@ -125,20 +146,34 @@ export default function JobsIndexPage() {
         <div className="grid gap-2">
           {filtered.map(j => {
             const when = j.scheduled_for ? new Date(j.scheduled_for).toLocaleString() : '—';
+            const isCompleted = (j.status ?? '').toLowerCase() === 'completed';
             return (
-              <Link key={j.id} href={`/dashboard/jobs/${j.id}`} className="no-underline">
-                <div className="flex items-center justify-between rounded-xl border p-3 hover:bg-gray-50">
+              <div key={j.id} className="rounded-xl border p-3 hover:bg-gray-50">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  {/* Left */}
                   <div className="min-w-0">
                     <div className="truncate font-medium">{j.title}</div>
                     <div className="truncate text-sm text-gray-500">{j.customer?.name ?? '—'}</div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-3">
+
+                  {/* Right actions */}
+                  <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                     <div className="text-sm text-gray-600">{when}</div>
                     <StatusBadge status={j.status} />
-                    <span className="rounded-md border px-3 py-1.5 text-sm">View</span>
+                    {!isCompleted && (
+                      <button
+                        onClick={() => markCompleted(j.id)}
+                        className="rounded-md bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700"
+                      >
+                        Complete
+                      </button>
+                    )}
+                    <Link href={`/dashboard/jobs/${j.id}`} className="rounded-md border px-3 py-1.5 text-sm">
+                      View
+                    </Link>
                   </div>
                 </div>
-              </Link>
+              </div>
             );
           })}
         </div>
