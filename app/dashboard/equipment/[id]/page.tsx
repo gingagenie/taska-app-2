@@ -11,8 +11,16 @@ export default function EditEquipmentPage() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
-  const params = useParams<{ id: string }>();
+  const params = useParams(); // can be string | string[] | undefined
   const router = useRouter();
+
+  // ---- normalize the route param safely ----
+  const equipmentId =
+    typeof params?.id === 'string'
+      ? params.id
+      : Array.isArray(params?.id)
+      ? params!.id[0]
+      : '';
 
   const [orgId, setOrgId] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -29,6 +37,12 @@ export default function EditEquipmentPage() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!equipmentId) {
+      setErr('Missing equipment id in the URL.');
+      setLoading(false);
+      return;
+    }
+
     (async () => {
       const { data: prof } = await supabase.from('profiles').select('active_org_id').single();
       const oid = (prof?.active_org_id as string) || '';
@@ -46,7 +60,7 @@ export default function EditEquipmentPage() {
       const { data: eq, error } = await supabase
         .from('equipment')
         .select('id, customer_id, equipment_code, make, model, serial_number, notes')
-        .eq('id', params.id)
+        .eq('id', equipmentId)
         .single();
 
       if (error) setErr(error.message);
@@ -60,11 +74,13 @@ export default function EditEquipmentPage() {
       }
       setLoading(false);
     })();
-  }, [params.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equipmentId]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (!equipmentId) return setErr('Missing equipment id.');
     if (!equipmentCode.trim()) return setErr('Equipment ID is required.');
     if (!make.trim()) return setErr('Make is required.');
 
@@ -73,13 +89,13 @@ export default function EditEquipmentPage() {
       .from('equipment')
       .update({
         customer_id: customerId || null,
-        equipment_code: equipmentCode || null, // NEW
+        equipment_code: equipmentCode || null,
         make: make || null,
         model: model || null,
         serial_number: serial || null,
         notes: notes || null,
       })
-      .eq('id', params.id);
+      .eq('id', equipmentId);
 
     setSaving(false);
     if (error) setErr(error.message);
@@ -87,12 +103,16 @@ export default function EditEquipmentPage() {
   }
 
   async function handleDelete() {
+    if (!equipmentId) return;
     if (!confirm('Delete this equipment?')) return;
-    const { error } = await supabase.from('equipment').delete().eq('id', params.id);
+    const { error } = await supabase.from('equipment').delete().eq('id', equipmentId);
     if (error) alert(error.message);
     else router.push('/dashboard/equipment');
   }
 
+  if (!equipmentId) {
+    return <p className="text-sm text-red-600">Invalid URL: no equipment id.</p>;
+  }
   if (loading) return <p>Loading…</p>;
 
   return (
