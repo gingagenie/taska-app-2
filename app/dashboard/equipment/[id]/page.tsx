@@ -1,118 +1,172 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
+import { useParams, useRouter } from 'next/navigation';
 
-type Equip = {
-  id: string;
-  customer_id: string | null;
-  make: string | null;
-  model: string | null;
-  serial_number: string | null;
-  notes: string | null;
-};
+type Customer = { id: string; name: string | null };
 
-export default function EquipmentEditPage() {
-  // ✅ useParams is non-null in App Router; cast for TS
-  const { id } = useParams() as { id: string };
-  const router = useRouter();
-
+export default function EditEquipmentPage() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
 
-  const [equip, setEquip] = useState<Equip | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState('');
+  const [customers, setCustomers] = useState<Customer[]>([]);
 
-  // local form state
+  const [customerId, setCustomerId] = useState<string>('');
+  const [equipmentCode, setEquipmentCode] = useState(''); // NEW
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [serial, setSerial] = useState('');
   const [notes, setNotes] = useState('');
 
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!id) return; // defensive guard
     (async () => {
-      setLoading(true);
-      setErr(null);
-      const { data, error } = await supabase
+      const { data: prof } = await supabase.from('profiles').select('active_org_id').single();
+      const oid = (prof?.active_org_id as string) || '';
+      setOrgId(oid);
+
+      if (oid) {
+        const { data } = await supabase
+          .from('customers')
+          .select('id,name')
+          .eq('org_id', oid)
+          .order('name', { ascending: true });
+        setCustomers((data || []) as Customer[]);
+      }
+
+      const { data: eq, error } = await supabase
         .from('equipment')
-        .select('id, customer_id, make, model, serial_number, notes')
-        .eq('id', id)
+        .select('id, customer_id, equipment_code, make, model, serial_number, notes')
+        .eq('id', params.id)
         .single();
 
-      if (error) {
-        setErr(error.message);
-      } else if (data) {
-        setEquip(data as Equip);
-        setMake(data.make ?? '');
-        setModel(data.model ?? '');
-        setSerial(data.serial_number ?? '');
-        setNotes(data.notes ?? '');
+      if (error) setErr(error.message);
+      else if (eq) {
+        setCustomerId(eq.customer_id ?? '');
+        setEquipmentCode(eq.equipment_code ?? '');
+        setMake(eq.make ?? '');
+        setModel(eq.model ?? '');
+        setSerial(eq.serial_number ?? '');
+        setNotes(eq.notes ?? '');
       }
       setLoading(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [params.id]);
 
-  async function save() {
-    if (!id) return;
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    if (!equipmentCode.trim()) return setErr('Equipment ID is required.');
+    if (!make.trim()) return setErr('Make is required.');
+
+    setSaving(true);
     const { error } = await supabase
       .from('equipment')
       .update({
+        customer_id: customerId || null,
+        equipment_code: equipmentCode || null, // NEW
         make: make || null,
         model: model || null,
         serial_number: serial || null,
         notes: notes || null,
       })
-      .eq('id', id);
+      .eq('id', params.id);
 
-    if (error) {
-      setErr(error.message);
-    } else {
-      router.push('/dashboard/equipment');
-    }
+    setSaving(false);
+    if (error) setErr(error.message);
+    else router.push('/dashboard/equipment');
   }
 
-  if (!id) {
-    return <main className="p-6"><p>Missing equipment id.</p></main>;
+  async function handleDelete() {
+    if (!confirm('Delete this equipment?')) return;
+    const { error } = await supabase.from('equipment').delete().eq('id', params.id);
+    if (error) alert(error.message);
+    else router.push('/dashboard/equipment');
   }
+
+  if (loading) return <p>Loading…</p>;
 
   return (
-    <main className="p-6">
-      <h1 className="text-xl font-semibold mb-4">Edit Equipment</h1>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="t-h2">Edit Equipment</h2>
+        <button className="t-btn t-btn--danger" onClick={handleDelete}>
+          Delete
+        </button>
+      </div>
 
-      {loading && <p>Loading…</p>}
-      {err && <p style={{ color: 'crimson' }}>{err}</p>}
-
-      {!loading && equip && (
-        <div className="grid gap-3 max-w-lg">
-          <label className="grid gap-1">
-            <span className="text-sm">Make</span>
-            <input className="rounded border px-3 py-2" value={make} onChange={e=>setMake(e.target.value)} />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm">Model</span>
-            <input className="rounded border px-3 py-2" value={model} onChange={e=>setModel(e.target.value)} />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm">Serial Number</span>
-            <input className="rounded border px-3 py-2" value={serial} onChange={e=>setSerial(e.target.value)} />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-sm">Notes</span>
-            <textarea className="rounded border px-3 py-2" rows={4} value={notes} onChange={e=>setNotes(e.target.value)} />
-          </label>
-
-          <div className="flex gap-2 mt-2">
-            <button onClick={save} className="rounded bg-blue-600 px-3 py-2 text-white">Save</button>
-            <button onClick={() => router.back()} className="rounded border px-3 py-2">Cancel</button>
+      <form onSubmit={handleSave} className="t-card p-5 space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="t-label">Equipment ID *</label>
+            <input
+              className="t-input"
+              value={equipmentCode}
+              onChange={(e) => setEquipmentCode(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="t-label">Customer</label>
+            <select
+              className="t-input"
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name || 'Unnamed'}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
-      )}
-    </main>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="t-label">Make *</label>
+            <input className="t-input" value={make} onChange={(e) => setMake(e.target.value)} />
+          </div>
+          <div>
+            <label className="t-label">Model</label>
+            <input className="t-input" value={model} onChange={(e) => setModel(e.target.value)} />
+          </div>
+          <div>
+            <label className="t-label">Serial #</label>
+            <input className="t-input" value={serial} onChange={(e) => setSerial(e.target.value)} />
+          </div>
+        </div>
+
+        <div>
+          <label className="t-label">Notes</label>
+          <textarea
+            className="t-input"
+            rows={4}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </div>
+
+        {err && <p className="text-red-600 text-sm">{err}</p>}
+
+        <div className="flex gap-2">
+          <button type="submit" className="t-btn t-btn--primary" disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" className="t-btn" onClick={() => router.push('/dashboard/equipment')}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
