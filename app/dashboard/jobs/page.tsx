@@ -1,8 +1,26 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
+
+// Badge again (same as dashboard)
+function StatusBadge({ status }: { status?: string | null }) {
+  const s = (status ?? 'draft').toLowerCase();
+  const map: Record<string, string> = {
+    draft: 'bg-gray-100 text-gray-800',
+    scheduled: 'bg-blue-100 text-blue-800',
+    in_progress: 'bg-amber-100 text-amber-800',
+    on_hold: 'bg-purple-100 text-purple-800',
+    completed: 'bg-green-100 text-green-800',
+    cancelled: 'bg-red-100 text-red-800',
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${map[s] ?? map.draft}`}>
+      {s.replace('_', ' ')}
+    </span>
+  );
+}
 
 type Row = {
   id: string;
@@ -10,8 +28,10 @@ type Row = {
   status: string | null;
   scheduled_for: string | null;
   customer?: { id: string; name: string } | null;
-  site?: { id: string; line1: string | null; city: string | null; state: string | null; postcode: string | null } | null;
 };
+
+const STATUS_FILTERS = ['all','draft','scheduled','in_progress','on_hold','completed','cancelled'] as const;
+type StatusFilter = typeof STATUS_FILTERS[number];
 
 export default function JobsIndexPage() {
   const supabase = createBrowserClient(
@@ -24,9 +44,9 @@ export default function JobsIndexPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
 
   useEffect(() => {
-    // get active org
     supabase.from('profiles').select('active_org_id').single()
       .then(({ data, error }) => {
         if (error) setErr(error.message);
@@ -42,12 +62,11 @@ export default function JobsIndexPage() {
         .from('jobs')
         .select(`
           id, title, status, scheduled_for,
-          customer:customers ( id, name ),
-          site:customer_addresses ( id, line1, city, state, postcode )
+          customer:customers ( id, name )
         `)
-        .eq('org_id', orgId)                // explicit filter for index use; RLS still protects
+        .eq('org_id', orgId)
         .order('scheduled_for', { ascending: false })
-        .limit(200);
+        .limit(400);
       if (error) setErr(error.message);
       setRows((data as any[]) || []);
       setLoading(false);
@@ -56,63 +75,67 @@ export default function JobsIndexPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(r =>
-      (r.title || '').toLowerCase().includes(q) ||
-      (r.customer?.name || '').toLowerCase().includes(q)
-    );
-  }, [rows, query]);
+    return rows.filter(r => {
+      const matchesQ =
+        !q ||
+        (r.title || '').toLowerCase().includes(q) ||
+        (r.customer?.name || '').toLowerCase().includes(q);
+
+      const matchesS = status === 'all' || (r.status ?? 'draft').toLowerCase() === status;
+      return matchesQ && matchesS;
+    });
+  }, [rows, query, status]);
 
   return (
-    <main style={{ display:'grid', gap:12 }}>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12}}>
-        <h1 style={{fontSize:24, fontWeight:700}}>Jobs</h1>
+    <main className="grid gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Jobs</h1>
         <Link href="/dashboard/jobs/new">
-          <button>+ New Job</button>
+          <button className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">+ New Job</button>
         </Link>
       </div>
 
-      <div style={{display:'flex', gap:8, alignItems:'center'}}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <input
+          className="w-full max-w-xl rounded-md border px-3 py-2"
           placeholder="Search jobs or customer…"
           value={query}
           onChange={e => setQuery(e.target.value)}
-          style={{flex:1}}
         />
-        <span style={{color:'#666'}}>{filtered.length} shown</span>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600">Status</label>
+          <select
+            className="rounded-md border px-2 py-2 text-sm"
+            value={status}
+            onChange={(e)=> setStatus(e.target.value as StatusFilter)}
+          >
+            {STATUS_FILTERS.map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
+          </select>
+        </div>
       </div>
 
-      {err && <p style={{color:'crimson'}}>Error: {err}</p>}
+      {err && <p className="text-red-600">{err}</p>}
       {loading ? (
         <p>Loading…</p>
       ) : filtered.length === 0 ? (
-        <div style={{border:'1px solid #e5e7eb', borderRadius:12, padding:16}}>
-          <p>No jobs yet.</p>
-          <p><Link href="/dashboard/jobs/new">Create your first job →</Link></p>
+        <div className="rounded-xl border border-dashed p-6 text-sm text-gray-500">
+          No jobs match your filters.
         </div>
       ) : (
-        <div style={{display:'grid', gap:8}}>
-          {filtered.map((j) => {
+        <div className="grid gap-2">
+          {filtered.map(j => {
             const when = j.scheduled_for ? new Date(j.scheduled_for).toLocaleString() : '—';
-            const site = j.site ? [j.site.line1, j.site.city, j.site.state, j.site.postcode].filter(Boolean).join(', ') : '';
             return (
-              <Link href={`/dashboard/jobs/${j.id}`} key={j.id} style={{textDecoration:'none', color:'inherit'}}>
-                <div style={{
-                  border:'1px solid #e5e7eb', borderRadius:12, padding:12,
-                  display:'grid', gridTemplateColumns:'minmax(200px,1fr) 160px 220px 220px', gap:12, alignItems:'center'
-                }}>
-                  <div style={{fontWeight:600}}>{j.title}</div>
-                  <div>
-                    <span style={{
-                      padding:'2px 8px', borderRadius:9999, border:'1px solid #e5e7eb',
-                      background:'#f9fafb', fontSize:12
-                    }}>
-                      {j.status || 'new'}
-                    </span>
+              <Link key={j.id} href={`/dashboard/jobs/${j.id}`} className="no-underline">
+                <div className="flex items-center justify-between rounded-xl border p-3 hover:bg-gray-50">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{j.title}</div>
+                    <div className="truncate text-sm text-gray-500">{j.customer?.name ?? '—'}</div>
                   </div>
-                  <div style={{color:'#444'}}>{when}</div>
-                  <div style={{color:'#666'}}>
-                    {(j.customer?.name || '') + (site ? ` • ${site}` : '')}
+                  <div className="flex shrink-0 items-center gap-3">
+                    <div className="text-sm text-gray-600">{when}</div>
+                    <StatusBadge status={j.status} />
+                    <span className="rounded-md border px-3 py-1.5 text-sm">View</span>
                   </div>
                 </div>
               </Link>
