@@ -11,7 +11,8 @@ export default function LoginPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  const params = useSearchParams();
+  const params = useSearchParams(); // may be null per TS, so guard when reading
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export default function LoginPage() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (data.session) {
-        const next = params.get('next') || '/dashboard';
+        const next = params?.get('next') ?? '/dashboard';
         window.location.replace(next);
       }
     })();
@@ -52,7 +53,7 @@ export default function LoginPage() {
       }
     }
 
-    const next = params.get('next') || '/dashboard';
+    const next = params?.get('next') ?? '/dashboard';
     window.location.replace(next);
   }
 
