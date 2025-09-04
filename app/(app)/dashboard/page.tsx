@@ -1,13 +1,14 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
-import { getActiveOrgIdClient } from '@/lib/getActiveOrgIdClient';
+import Link from 'next/link';
 
 type Job = {
   id: string;
   title: string;
   scheduled_for: string | null;
-  status?: string | null;
+  org_id: string;
 };
 
 export default function Dashboard() {
@@ -16,76 +17,84 @@ export default function Dashboard() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  const [orgId, setOrgId] = useState('');
-  const [today, setToday] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [ensuring, setEnsuring] = useState(true);
+  const [jobsToday, setJobsToday] = useState<Job[]>([]);
 
+  // Safety net: ensure org on mount
   useEffect(() => {
     (async () => {
-      const { orgId } = await getActiveOrgIdClient();
-      setOrgId(orgId);
+      try {
+        await fetch('/api/ensure-org', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      } catch (_) {}
+      // load profile/org id afterwards
+      const { data } = await supabase.from('profiles').select('active_org_id').single();
+      setOrgId((data?.active_org_id as string) || null);
+      setEnsuring(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!orgId) { setLoading(false); return; }
-
+    if (!orgId) return;
     (async () => {
-      setLoading(true);
-      // load "today" (simple variant)
-      const start = new Date(); start.setHours(0,0,0,0);
-      const end = new Date();   end.setHours(23,59,59,999);
+      const today = new Date();
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const end = new Date(start); end.setDate(start.getDate() + 1);
 
       const { data } = await supabase
         .from('jobs')
-        .select('id,title,scheduled_for,status')
+        .select('id,title,scheduled_for,org_id')
         .eq('org_id', orgId)
         .gte('scheduled_for', start.toISOString())
-        .lte('scheduled_for', end.toISOString())
+        .lt('scheduled_for', end.toISOString())
         .order('scheduled_for', { ascending: true });
 
-      setToday(data || []);
-      setLoading(false);
+      setJobsToday((data as any) || []);
     })();
-  }, [orgId]);
+  }, [orgId, supabase]);
 
   return (
     <main className="p-4">
-      <h2 className="text-xl font-semibold mb-4">Dashboard</h2>
+      <header className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Dashboard</h2>
+        <Link href="/dashboard/jobs/new" className="rounded-md border px-3 py-2 hover:bg-gray-50">+ New Job</Link>
+      </header>
 
-      {!orgId && (
-        <div className="rounded-md border p-3 bg-amber-50 text-amber-900 mb-4">
-          No active organization yet. Create one in <a className="underline" href="/dashboard/orgs">Orgs</a>.
+      {ensuring && <p>Preparing your workspace…</p>}
+
+      {!ensuring && !orgId && (
+        <div className="rounded-md border p-4">
+          <p className="mb-2 font-medium">No active org yet.</p>
+          <button
+            className="rounded-md bg-blue-600 px-3 py-2 text-white"
+            onClick={async () => {
+              await fetch('/api/ensure-org', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+              const { data } = await supabase.from('profiles').select('active_org_id').single();
+              setOrgId((data?.active_org_id as string) || null);
+            }}
+          >
+            Fix my org
+          </button>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <section>
-          <h3 className="font-medium mb-2">Jobs Today</h3>
-          {loading ? (
-            <div className="text-sm text-gray-500">Loading…</div>
-          ) : today.length === 0 ? (
-            <div className="text-sm text-gray-500">No jobs today.</div>
-          ) : (
-            <ul className="space-y-2">
-              {today.map(j => (
-                <li key={j.id} className="flex items-center justify-between rounded-md border p-2">
-                  <div>
-                    <div className="font-medium">{j.title}</div>
-                    <div className="text-xs text-gray-500">{j.scheduled_for ? new Date(j.scheduled_for).toLocaleString() : '—'}</div>
-                  </div>
-                  <a className="text-sm rounded-md border px-3 py-1 hover:bg-gray-50" href={`/dashboard/jobs/${j.id}`}>View</a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section>
-          <h3 className="font-medium mb-2">Upcoming Jobs</h3>
-          <div className="text-sm text-gray-500">Coming soon.</div>
-        </section>
-      </div>
+      {orgId && (
+        <>
+          <h3 className="mt-6 mb-2 text-lg font-semibold">Today’s Jobs</h3>
+          <ul className="space-y-2">
+            {jobsToday.map((j) => (
+              <li key={j.id} className="flex items-center justify-between rounded-md border p-3">
+                <span className="font-medium">{j.title}</span>
+                <Link href={`/dashboard/jobs/${j.id}`} className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50">
+                  View
+                </Link>
+              </li>
+            ))}
+            {jobsToday.length === 0 && <li className="text-gray-500">No jobs today.</li>}
+          </ul>
+        </>
+      )}
     </main>
   );
 }
