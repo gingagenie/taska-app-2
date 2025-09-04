@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 
 // FullCalendar
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
-import interactionPlugin, { EventDropArg } from '@fullcalendar/interaction';
+import interactionPlugin from '@fullcalendar/interaction';
 
+// NOTE: Do NOT import CSS for v6; it’s injected by the packages
 
 type Job = {
   id: string;
@@ -36,19 +37,18 @@ export default function SchedulePage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Simple: get active org from profiles
+  // Get active org from profiles
   useEffect(() => {
     (async () => {
-      const { data: prof } = await supabase.from('profiles').select('active_org_id').single();
-      if (prof?.active_org_id) setOrgId(prof.active_org_id);
+      const { data, error } = await supabase.from('profiles').select('active_org_id').single();
+      if (!error && data?.active_org_id) setOrgId(data.active_org_id);
     })();
   }, [supabase]);
 
-  // Load members (for reassignment)
+  // Load org members (for reassignment)
   useEffect(() => {
     if (!orgId) return;
     (async () => {
-      // members via org_members ↔ profiles
       const { data, error } = await supabase
         .from('org_members')
         .select('user_id, profiles(full_name, email)')
@@ -66,7 +66,7 @@ export default function SchedulePage() {
     })();
   }, [orgId, supabase]);
 
-  // Load jobs for the visible month (we’ll refresh on calendar range change too)
+  // Fetch jobs for a date range
   const loadJobsForRange = async (startISO?: string, endISO?: string) => {
     if (!orgId) return;
 
@@ -81,10 +81,10 @@ export default function SchedulePage() {
     }
 
     const { data, error } = await q;
-    if (!error && data) setJobs(data as any);
+    if (!error && data) setJobs(data as Job[]);
   };
 
-  // Initial load (no range = everything; we’ll tighten on view change)
+  // Initial load (broad); later narrowed by calendar's datesSet
   useEffect(() => {
     if (!orgId) return;
     setLoading(true);
@@ -115,11 +115,11 @@ export default function SchedulePage() {
       });
   }, [jobs, members]);
 
-  // Drag to a new date -> update scheduled_for
-  const onEventDrop = async (info: EventDropArg) => {
-    const id = info.event.id;
-    const newStart = info.event.start; // Date
-    if (!newStart) return;
+  // Drag to a new date -> update jobs.scheduled_for
+  const onEventDrop = async (info: any) => {
+    const id = info?.event?.id;
+    const newStart: Date | null = info?.event?.start ?? null;
+    if (!id || !newStart) return;
 
     const { error } = await supabase
       .from('jobs')
@@ -128,16 +128,15 @@ export default function SchedulePage() {
 
     if (error) {
       console.error(error);
-      info.revert();
+      info.revert?.();
     } else {
-      // keep local state in sync
       setJobs((prev) =>
         prev.map((j) => (j.id === id ? { ...j, scheduled_for: newStart.toISOString() } : j))
       );
     }
   };
 
-  // Reassign technician on event click (simple prompt)
+  // Click to reassign technician (quick prompt)
   const onEventClick = async (arg: any) => {
     if (!members.length) return;
 
@@ -159,24 +158,20 @@ export default function SchedulePage() {
       alert(error.message);
       return;
     }
-    // Local title refresh
     setJobs((prev) =>
       prev.map((j) => (j.id === jobId ? { ...j, assigned_to: techId } : j))
     );
   };
 
-  // When the calendar navigates/month changes, load that range only
+  // Calendar view change → load only that range
   const onDatesSet = (info: { start: Date; end: Date }) => {
-    const startISO = info.start.toISOString();
-    const endISO = info.end.toISOString();
-    loadJobsForRange(startISO, endISO);
+    loadJobsForRange(info.start.toISOString(), info.end.toISOString());
   };
 
   return (
     <div className="space-y-6">
       <header className="t-header">
         <h1 className="t-h1">Schedule</h1>
-        {/* room for filters later */}
       </header>
 
       <div className="card p-4">
