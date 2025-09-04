@@ -8,8 +8,6 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin, { EventDropArg } from '@fullcalendar/interaction';
 
-// FullCalendar styles (piggyback on Next static CSS)
-import '@fullcalendar/daygrid/index.css';
 
 type Job = {
   id: string;
