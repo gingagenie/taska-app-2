@@ -9,7 +9,8 @@ export default function AcceptInvitePage() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
-  const { token } = useParams<{ token: string }>();
+  const params = useParams();
+  const token = (params as { token?: string })?.token;  // ✅ safe access
   const router = useRouter();
   const [msg, setMsg] = useState<string>('Preparing your invite…');
   const [err, setErr] = useState<string | null>(null);
@@ -18,16 +19,13 @@ export default function AcceptInvitePage() {
     (async () => {
       if (!token) return;
 
-      // Are we logged in?
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
-        // Not logged in → stash token, send to login, bounce back to dashboard after
         sessionStorage.setItem('taska_invite_token', String(token));
         router.replace('/login?next=/dashboard');
         return;
       }
 
-      // Logged in → accept immediately
       const { error } = await supabase.rpc('accept_org_invite', { p_token: token as any });
       if (error) {
         setErr(error.message);
@@ -38,8 +36,7 @@ export default function AcceptInvitePage() {
       setMsg('Invite accepted. Redirecting…');
       setTimeout(() => router.replace('/dashboard'), 600);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, supabase, router]);
 
   return (
     <main className="max-w-sm mx-auto p-6">
