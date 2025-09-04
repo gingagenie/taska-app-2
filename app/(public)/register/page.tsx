@@ -1,91 +1,133 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
-import Link from 'next/link';
+import { useState, useEffect } from "react";
+import { createBrowserClient } from "@supabase/ssr";
 
-export default function Register() {
+export default function RegisterPage() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  const [fullName, setFullName] = useState('');
-  const [orgName, setOrgName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [fullName, setFullName] = useState("");
+  const [orgName, setOrgName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  const onSubmit = async (e: React.FormEvent) => {
+  // If already logged in, bounce to dashboard
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) window.location.replace("/dashboard");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null); setMsg(null);
-    setLoading(true);
+    setErr(null);
+    setMsg(null);
 
-    // 1) Sign up
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } }, // saved to auth metadata
-    });
-
-    if (error) {
-      setErr(error.message);
-      setLoading(false);
+    if (!fullName.trim() || !orgName.trim() || !email.trim() || !password.trim()) {
+      setErr("Please fill all fields.");
       return;
     }
 
-    // If email confirmation is ON, there won't be a session yet:
-    if (!data.session) {
-      setMsg('Check your email to confirm your account. Then log in.');
-      setLoading(false);
-      return;
-    }
+    try {
+      setLoading(true);
 
-    // 2) Already signed in (confirmation off) → bootstrap org immediately
-    const { error: rpcError } = await supabase.rpc('bootstrap_org', {
-      p_org_name: orgName,
-      p_full_name: fullName || null,
-    });
-    if (rpcError) {
-      setErr(rpcError.message);
-    } else {
-      window.location.href = '/dashboard';
+      // Create the user
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName } },
+      });
+      if (error) throw error;
+
+      // Ensure an org exists & is set active
+      await fetch("/api/ensure-org", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: orgName }),
+      });
+
+      // Go inside
+      window.location.href = "/dashboard";
+    } catch (e: any) {
+      setErr(e?.message ?? "Something went wrong.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }
 
   return (
     <main className="max-w-md mx-auto p-6">
-      <h1 className="t-h1 mb-6">Create account</h1>
+      <h1 className="text-2xl font-semibold mb-6">Create your account</h1>
+
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label className="t-label">Full name</label>
-          <input className="t-input" value={fullName} onChange={e=>setFullName(e.target.value)} required />
-        </div>
-        <div>
-          <label className="t-label">Organisation</label>
-          <input className="t-input" value={orgName} onChange={e=>setOrgName(e.target.value)} required />
-        </div>
-        <div>
-          <label className="t-label">Email</label>
-          <input type="email" className="t-input" value={email} onChange={e=>setEmail(e.target.value)} required />
-        </div>
-        <div>
-          <label className="t-label">Password</label>
-          <input type="password" className="t-input" value={password} onChange={e=>setPassword(e.target.value)} required />
+          <label className="block text-sm mb-1">Full name</label>
+          <input
+            className="w-full rounded-lg border border-white/10 bg-[#0f1115] px-3 py-2"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="Jane Doe"
+          />
         </div>
 
-        <button className="t-btn t-btn--primary" disabled={loading}>
-          {loading ? 'Creating…' : 'Create account'}
-        </button>
+        <div>
+          <label className="block text-sm mb-1">Organization / Business name</label>
+          <input
+            className="w-full rounded-lg border border-white/10 bg-[#0f1115] px-3 py-2"
+            value={orgName}
+            onChange={(e) => setOrgName(e.target.value)}
+            placeholder="Acme Services"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">Email</label>
+          <input
+            type="email"
+            className="w-full rounded-lg border border-white/10 bg-[#0f1115] px-3 py-2"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">Password</label>
+          <input
+            type="password"
+            className="w-full rounded-lg border border-white/10 bg-[#0f1115] px-3 py-2"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+          />
+        </div>
+
+        {err && <p className="text-red-400 text-sm">{err}</p>}
+        {msg && <p className="text-emerald-400 text-sm">{msg}</p>}
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-4 py-2 text-sm font-medium"
+          >
+            {loading ? "Creating…" : "Create account"}
+          </button>
+          <a href="/login" className="rounded-lg border border-white/10 px-4 py-2 text-sm">Log in</a>
+        </div>
       </form>
+    </main>
+  );
+}
 
-      {msg && <p className="mt-4 text-green-600">{msg}</p>}
-      {err && <p className="mt-4 text-red-600">{err}</p>}
-
-      <p className="mt-6 text-sm">
         Already have an account? <Link className="text-blue-600 underline" href="/login">Log in</Link>
       </p>
     </main>
