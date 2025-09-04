@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
+import { useState } from 'react';
+import Link from 'next/link';
+import { createBrowserClient } from '@supabase/ssr';
 
 export default function RegisterPage() {
   const supabase = createBrowserClient(
@@ -10,122 +10,97 @@ export default function RegisterPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  const [fullName, setFullName] = useState("");
-  const [orgName, setOrgName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState('');
+  const [orgName, setOrgName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  // If already logged in, go to dashboard
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) window.location.replace("/dashboard");
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-
-    if (!fullName.trim() || !orgName.trim() || !email.trim() || !password.trim()) {
-      setErr("Please fill all fields.");
-      return;
-    }
-
+    setLoading(true);
     try {
-      setLoading(true);
-
-      const { error } = await supabase.auth.signUp({
+      // 1) sign up (or sign in if account exists)
+      const { error: signUpErr } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { full_name: fullName } },
       });
-      if (error) throw error;
 
-      // Ensure org exists and is active
-      await fetch("/api/ensure-org", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: orgName }),
+      if (signUpErr && signUpErr.message.includes('already registered')) {
+        const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInErr) throw signInErr;
+      } else if (signUpErr) {
+        throw signUpErr;
+      }
+
+      // 2) ensure org exists + set active_org_id
+      await fetch('/api/ensure-org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: orgName || 'My Organization' }),
       });
 
-      window.location.href = "/dashboard";
+      // 3) go inside
+      window.location.href = '/dashboard';
     } catch (e: any) {
-      setErr(e?.message ?? "Something went wrong.");
+      setErr(e?.message || 'Something went wrong.');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="max-w-md mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-6">Create your account</h1>
+    <main className="mx-auto max-w-md p-6">
+      <h1 className="text-2xl font-semibold mb-4">Create your account</h1>
+      <form onSubmit={onSubmit} className="space-y-3">
+        <input
+          className="w-full rounded-md border px-3 py-2"
+          placeholder="Full name"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          required
+        />
+        <input
+          className="w-full rounded-md border px-3 py-2"
+          placeholder="Organization / Business name"
+          value={orgName}
+          onChange={(e) => setOrgName(e.target.value)}
+          required
+        />
+        <input
+          type="email"
+          className="w-full rounded-md border px-3 py-2"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <input
+          type="password"
+          className="w-full rounded-md border px-3 py-2"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm mb-1">Full name</label>
-          <input
-            className="w-full rounded-lg border border-white/10 bg-[#0f1115] px-3 py-2"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="Jane Doe"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">Organization / Business name</label>
-          <input
-            className="w-full rounded-lg border border-white/10 bg-[#0f1115] px-3 py-2"
-            value={orgName}
-            onChange={(e) => setOrgName(e.target.value)}
-            placeholder="Acme Services"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">Email</label>
-          <input
-            type="email"
-            className="w-full rounded-lg border border-white/10 bg-[#0f1115] px-3 py-2"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">Password</label>
-          <input
-            type="password"
-            className="w-full rounded-lg border border-white/10 bg-[#0f1115] px-3 py-2"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-          />
-        </div>
-
-        {err && <p className="text-red-400 text-sm">{err}</p>}
-
-        <div className="flex gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-4 py-2 text-sm font-medium"
-          >
-            {loading ? "Creating…" : "Create account"}
-          </button>
-          <Link href="/login" className="rounded-lg border border-white/10 px-4 py-2 text-sm">
-            Log in
-          </Link>
-        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded-md bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+        >
+          {loading ? 'Creating…' : 'Create account'}
+        </button>
       </form>
 
-      <p className="mt-4 text-sm text-white/60">
-        Already have an account?{" "}
-        <Link className="text-blue-400 hover:underline" href="/login">
+      {err && <p className="mt-3 text-red-600">{err}</p>}
+
+      <p className="mt-4 text-sm text-gray-600">
+        Already have an account?{' '}
+        <Link className="text-blue-600 underline" href="/login">
           Log in
         </Link>
       </p>
