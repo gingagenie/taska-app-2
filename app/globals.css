@@ -1,9 +1,7 @@
-/* Tailwind v3 directives */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 entry */
+@import "tailwindcss";
 
-/* ---- Design tokens as CSS vars (OK in v3) ---- */
+/* --- Design tokens as CSS variables --- */
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -75,17 +73,12 @@
   --sidebar-ring: oklch(0.439 0 0);
 }
 
-/* Base layer mappings (v3-safe) */
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
+/* Minimal base so tokens actually apply */
+* { border-color: var(--border); }
+body { background: var(--background); color: var(--foreground); }
 
-/* Optional small utilities used in your components */
-.t-card { @apply rounded-xl border bg-card text-card-foreground p-4; }
-.t-btn { @apply inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted; }
-.t-btn--primary { @apply bg-primary text-primary-foreground border-transparent hover:opacity-90; }
+/* Small, reusable utilities */
+.t-card { border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); color: var(--card-foreground); padding: 1rem; }
+.t-btn { display:inline-flex; align-items:center; gap:.5rem; border:1px solid var(--border); border-radius:.5rem; padding:.5rem .75rem; font-size:.875rem; }
+.t-btn--primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+.t-btn--ghost { background: transparent; }
