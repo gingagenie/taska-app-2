@@ -17,7 +17,7 @@
     "react-dom": "18.2.0",
     "resend": "^3.3.0",
     "stripe": "^16.5.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
     "@fullcalendar/react": "^6.1.10",
     "@fullcalendar/daygrid": "^6.1.10",
     "@fullcalendar/interaction": "^6.1.10"
