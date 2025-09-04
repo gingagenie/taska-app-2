@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { createBrowserClient } from "@supabase/ssr";
 
 export default function RegisterPage() {
@@ -15,9 +16,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
 
-  // If already logged in, bounce to dashboard
+  // If already logged in, go to dashboard
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -29,7 +29,6 @@ export default function RegisterPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    setMsg(null);
 
     if (!fullName.trim() || !orgName.trim() || !email.trim() || !password.trim()) {
       setErr("Please fill all fields.");
@@ -39,22 +38,20 @@ export default function RegisterPage() {
     try {
       setLoading(true);
 
-      // Create the user
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { full_name: fullName } },
       });
       if (error) throw error;
 
-      // Ensure an org exists & is set active
+      // Ensure org exists and is active
       await fetch("/api/ensure-org", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: orgName }),
       });
 
-      // Go inside
       window.location.href = "/dashboard";
     } catch (e: any) {
       setErr(e?.message ?? "Something went wrong.");
@@ -111,7 +108,6 @@ export default function RegisterPage() {
         </div>
 
         {err && <p className="text-red-400 text-sm">{err}</p>}
-        {msg && <p className="text-emerald-400 text-sm">{msg}</p>}
 
         <div className="flex gap-3 pt-2">
           <button
@@ -121,14 +117,17 @@ export default function RegisterPage() {
           >
             {loading ? "Creating…" : "Create account"}
           </button>
-          <a href="/login" className="rounded-lg border border-white/10 px-4 py-2 text-sm">Log in</a>
+          <Link href="/login" className="rounded-lg border border-white/10 px-4 py-2 text-sm">
+            Log in
+          </Link>
         </div>
       </form>
-    </main>
-  );
-}
 
-        Already have an account? <Link className="text-blue-600 underline" href="/login">Log in</Link>
+      <p className="mt-4 text-sm text-white/60">
+        Already have an account?{" "}
+        <Link className="text-blue-400 hover:underline" href="/login">
+          Log in
+        </Link>
       </p>
     </main>
   );
