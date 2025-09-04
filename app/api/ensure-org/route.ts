@@ -1,47 +1,104 @@
-// app/api/ensure-org/route.ts
+// API: ensure the signed-in user has an org + membership and set active_org_id
 import { NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
+
+function supabaseServer() {
+  const cookieStore = cookies();
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: any) {
+          cookieStore.set({ name, value, ...options });
+        },
+        remove(name: string, options: any) {
+          // next/headers has no remove; emulate by setting empty
+          cookieStore.set({ name, value: "", ...options });
+        },
+      },
+    }
+  );
+}
 
 export async function POST(req: Request) {
-  const supabase = createRouteHandlerClient({ cookies });
-  const { name } = await req.json().catch(() => ({ name: null as string | null }));
+  const supabase = supabaseServer();
 
-  // who am I?
-  const { data: { user }, error: authErr } = await supabase.auth.getUser();
-  if (authErr || !user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  // must be authenticated (uses auth cookie coming from the browser)
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
 
-  // load profile
-  const { data: profile } = await supabase.from("profiles").select("id, active_org_id").eq("id", user.id).single();
-
-  if (profile?.active_org_id) {
-    return NextResponse.json({ ok: true, org_id: profile.active_org_id });
+  if (userErr || !user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // create org
-  const orgName = name?.trim() || "My Organization";
+  // optional org name from body
+  let name = "My Organization";
+  try {
+    const body = await req.json().catch(() => ({}));
+    if (typeof body?.name === "string" && body.name.trim()) {
+      name = body.name.trim();
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // If user already belongs to any org, just ensure active_org_id is set
+  const { data: existingMem } = await supabase
+    .from("org_members")
+    .select("org_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingMem?.org_id) {
+    // set active_org_id if null
+    await supabase
+      .from("profiles")
+      .update({ active_org_id: existingMem.org_id })
+      .eq("id", user.id)
+      .is("active_org_id", null);
+
+    return NextResponse.json({ ok: true, org_id: existingMem.org_id });
+  }
+
+  // Create org
   const { data: org, error: orgErr } = await supabase
     .from("orgs")
-    .insert({ name: orgName })
+    .insert({ name })
     .select("id")
     .single();
 
-  if (orgErr) return NextResponse.json({ ok: false, error: orgErr.message }, { status: 400 });
+  if (orgErr || !org) {
+    return NextResponse.json(
+      { error: orgErr?.message || "Failed to create org" },
+      { status: 400 }
+    );
+  }
 
-  // member as owner
+  // Make the user the owner
   const { error: memErr } = await supabase
     .from("org_members")
     .insert({ org_id: org.id, user_id: user.id, role: "owner" });
 
-  if (memErr) return NextResponse.json({ ok: false, error: memErr.message }, { status: 400 });
+  if (memErr) {
+    return NextResponse.json(
+      { error: memErr.message || "Failed to create membership" },
+      { status: 400 }
+    );
+  }
 
-  // set active_org_id
-  const { error: profErr } = await supabase
+  // Set as active org on profile
+  await supabase
     .from("profiles")
     .update({ active_org_id: org.id })
     .eq("id", user.id);
-
-  if (profErr) return NextResponse.json({ ok: false, error: profErr.message }, { status: 400 });
 
   return NextResponse.json({ ok: true, org_id: org.id });
 }
