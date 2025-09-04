@@ -1,18 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="max-w-sm mx-auto p-6 text-sm text-gray-600">Loading…</div>}>
+      <LoginInner />
+    </Suspense>
+  );
+}
+
+function LoginInner() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  const params = useSearchParams(); // may be null per TS, so guard when reading
-
+  const params = useSearchParams(); // now safely inside Suspense
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -42,15 +49,12 @@ export default function LoginPage() {
       return;
     }
 
-    // If we came from an invite, accept it now (token stored by /invite/[token])
+    // If we came from an invite, accept it now
     const token = sessionStorage.getItem('taska_invite_token');
     if (token) {
       const { error: joinErr } = await supabase.rpc('accept_org_invite', { p_token: token });
       sessionStorage.removeItem('taska_invite_token');
-      if (joinErr) {
-        // Non-fatal — user is logged in, just report and continue
-        console.error(joinErr);
-      }
+      if (joinErr) console.error(joinErr);
     }
 
     const next = params?.get('next') ?? '/dashboard';
